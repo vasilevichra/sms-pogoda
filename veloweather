@@ -1,0 +1,68 @@
+#!/usr/bin/env groovy
+
+def log = java.util.logging.Logger.getLogger("")
+
+// final String PROGNOZ_URL = "http://www.meteoinfo.ru/rss/forecasts/26063"
+// final String PROGNOZ_TEXT = new XmlSlurper().parse(PROGNOZ_URL).channel.item[0].description
+
+
+// Облачно, дождь. Температура ночью 17°, днём 21°. Ветер южный, 2 м/с. Атмосферное давление ночью 761 мм рт.ст., днём 759 мм рт.ст. Вероятность осадков 95%
+// def matcher = PROGNOZ_TEXT =~ /(?<prognoz>^[^.]+)\. Температура ночью (?<Tnight>\d+)°\, днём (?<Tday>\d+)°\..*/
+// if( matcher.matches() ) {
+//   println matcher.group('prognoz')
+//   println matcher.group('Tnight')
+//   println matcher.group('Tday')
+//
+//   println "${PROGNOZ_DATE}: ${matcher.group('prognoz')}. T ${matcher.group('Tday')}C, "
+// }
+// else {
+//   println "No Match"
+// }
+
+
+def cli = new CliBuilder(usage: 'veloweather --api=API_KEY --phone=79001234567', header: 'Available options:\n', footer: 'If you have quiz: vasilevich@gmail.com')
+cli.with {
+    a longOpt: 'api',   'Your api key from sms.ru', args: 1, required: true
+    p longOpt: 'phone', 'Phone nubmer in special format: 79XXXXXXXXX', args: 1, required: true
+    h longOpt: 'help',  'Show usage information'
+}
+
+def options = cli.parse(args)
+if (!options) return
+if (options.h) cli.usage()
+
+log.info "api key: ${options.a}"
+log.info "phone: ${options.p}"
+
+
+
+@Grab('com.ibm.icu:icu4j:57.1')
+@Grab('org.jsoup:jsoup:1.9.2')
+def page = org.jsoup.Jsoup.connect("http://www.meteoinfo.ru/forecasts5000/russia/leningrad-region").get()
+
+final String CSS = "#tab-pane-1 tr:nth-child(##) > td:nth-child(3)"
+
+final String T_NIGHT = (page.select(CSS.replaceAll("##", "4")).first().text() =~ /^(\d+)[^\d]+(\d+)$/)[0][1]
+final String T_DAY = (page.select(CSS.replaceAll("##", "4")).first().text() =~ /^(\d+)[^\d]+(\d+)$/)[0][2]
+final String OSADKI = page.select(CSS.replaceAll("##", "7")).first().text()
+final String CHANCE = page.select(CSS.replaceAll("##", "8")).first().text()
+final String WIND = page.select(CSS.replaceAll("##", "10")).first().text()
+
+final String PROGNOZ = page.select(CSS.replaceAll("##", "6")).first().text()
+final String PROGNOZ_TRL = com.ibm.icu.text.Transliterator.getInstance("Russian-Latin/BGN; NFD").transform(PROGNOZ)
+
+final String TEXT = "${PROGNOZ}; днём ${T_DAY}, ночью ${T_NIGHT}; осадки ${OSADKI}мм (${CHANCE}%)"
+final String TEXT_ENC = java.net.URLEncoder.encode(TEXT)
+
+final String EXE_OUT = "http://sms.ru/sms/send?api_id=${options.a}&to=${options.p}&text=${TEXT_ENC}".toURL().text
+
+log.info "T night: ${T_NIGHT}"
+log.info "T day: ${T_DAY}"
+log.info "Osadki: ${OSADKI}мм"
+log.info "Veroyatnost: ${CHANCE}"
+log.info "Wind: ${WIND}"
+log.info "Prognoz: ${PROGNOZ}"
+log.info "Prognoz translit: ${PROGNOZ_TRL}"
+log.info "Text: ${TEXT} | Length: ${TEXT.length()}"
+log.info "Text encoded: ${TEXT_ENC} | Length: ${TEXT_ENC.length()}"
+log.info "Response from server: ${EXE_OUT}"
