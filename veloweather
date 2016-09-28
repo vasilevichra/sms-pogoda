@@ -2,24 +2,6 @@
 
 def log = java.util.logging.Logger.getLogger("")
 
-// final String PROGNOZ_URL = "http://www.meteoinfo.ru/rss/forecasts/26063"
-// final String PROGNOZ_TEXT = new XmlSlurper().parse(PROGNOZ_URL).channel.item[0].description
-
-
-// Облачно, дождь. Температура ночью 17°, днём 21°. Ветер южный, 2 м/с. Атмосферное давление ночью 761 мм рт.ст., днём 759 мм рт.ст. Вероятность осадков 95%
-// def matcher = PROGNOZ_TEXT =~ /(?<prognoz>^[^.]+)\. Температура ночью (?<Tnight>\d+)°\, днём (?<Tday>\d+)°\..*/
-// if( matcher.matches() ) {
-//   println matcher.group('prognoz')
-//   println matcher.group('Tnight')
-//   println matcher.group('Tday')
-//
-//   println "${PROGNOZ_DATE}: ${matcher.group('prognoz')}. T ${matcher.group('Tday')}C, "
-// }
-// else {
-//   println "No Match"
-// }
-
-
 def cli = new CliBuilder(usage: 'veloweather --api=API_KEY --phone=79001234567', header: 'Available options:\n', footer: 'If you have quiz: vasilevich@gmail.com')
 cli.with {
     a longOpt: 'api',   'Your api key from sms.ru', args: 1, required: true
