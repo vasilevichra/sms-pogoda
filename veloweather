@@ -1,6 +1,29 @@
 #!/usr/bin/env groovy
 
+@Grab('com.ibm.icu:icu4j:57.1')
+@Grab('org.jsoup:jsoup:1.9.2')
+import org.jsoup.Jsoup
+
 def log = java.util.logging.Logger.getLogger("")
+
+enum Sun {
+
+    A1("Нет заметных возмущений"),
+    A2("Небольшие возмущения"),
+    A3("Слабая геомагнитная буря"),
+    A4("Малая геомагнитная буря"),
+    A5("Умеренная геомагнитная буря"),
+    A6("Сильная геомагнитная буря"),
+    A7("Жесткий геомагнитный шторм"),
+    A8("Экстремальный шторм");
+
+    final String desc
+
+    Sun(String desc) {
+        this.desc = desc
+    }
+
+}
 
 def cli = new CliBuilder(usage: 'veloweather --api=API_KEY --phone=79001234567', header: 'Available options:\n', footer: 'If you have quiz: vasilevich@gmail.com')
 cli.with {
@@ -18,25 +41,16 @@ log.info "phone: ${options.p}"
 
 
 
-@Grab('com.ibm.icu:icu4j:57.1')
-@Grab('org.jsoup:jsoup:1.9.2')
-def page = org.jsoup.Jsoup.connect("http://www.meteoinfo.ru/forecasts5000/russia/leningrad-region").get()
+final String WEATHER_PAGE_URL = "http://www.meteoinfo.ru/forecasts5000/russia/leningrad-region"
+final def WEATHER_PAGE = Jsoup.connect(WEATHER_PAGE_URL).get()
+final String WEATHER_CSS = "#tab-pane-1 tr:nth-child(##) > td:nth-child(3)"
 
-final String CSS = "#tab-pane-1 tr:nth-child(##) > td:nth-child(3)"
-
-final String T_NIGHT = (page.select(CSS.replaceAll("##", "4")).first().text() =~ /^(\d+)[^\d]+(\d+)$/)[0][1]
-final String T_DAY = (page.select(CSS.replaceAll("##", "4")).first().text() =~ /^(\d+)[^\d]+(\d+)$/)[0][2]
-final String OSADKI = page.select(CSS.replaceAll("##", "7")).first().text()
-final String CHANCE = page.select(CSS.replaceAll("##", "8")).first().text()
-final String WIND = page.select(CSS.replaceAll("##", "10")).first().text()
-
-final String PROGNOZ = page.select(CSS.replaceAll("##", "6")).first().text()
-final String PROGNOZ_TRL = com.ibm.icu.text.Transliterator.getInstance("Russian-Latin/BGN; NFD").transform(PROGNOZ)
-
-final String TEXT = "${PROGNOZ}; днём ${T_DAY}, ночью ${T_NIGHT}; осадки ${OSADKI}мм (${CHANCE}%)"
-final String TEXT_ENC = java.net.URLEncoder.encode(TEXT)
-
-final String EXE_OUT = "http://sms.ru/sms/send?api_id=${options.a}&to=${options.p}&text=${TEXT_ENC}".toURL().text
+final String T_NIGHT = WEATHER_PAGE.select(WEATHER_CSS.replaceAll("##", "4")).first().text().find(~/^[-]?\d+/)
+final String T_DAY = WEATHER_PAGE.select(WEATHER_CSS.replaceAll("##", "4")).first().text().find(~/[-]?\d+$/)
+final String OSADKI = WEATHER_PAGE.select(WEATHER_CSS.replaceAll("##", "7")).first().text()
+final String CHANCE = WEATHER_PAGE.select(WEATHER_CSS.replaceAll("##", "8")).first().text()
+final String WIND = WEATHER_PAGE.select(WEATHER_CSS.replaceAll("##", "10")).first().text()
+final String PROGNOZ = WEATHER_PAGE.select(WEATHER_CSS.replaceAll("##", "6")).first().text()
 
 log.info "T night: ${T_NIGHT}"
 log.info "T day: ${T_DAY}"
@@ -44,7 +58,38 @@ log.info "Osadki: ${OSADKI}мм"
 log.info "Veroyatnost: ${CHANCE}"
 log.info "Wind: ${WIND}"
 log.info "Prognoz: ${PROGNOZ}"
-log.info "Prognoz translit: ${PROGNOZ_TRL}"
+
+
+
+final String SUN_ACTIVITY_PAGE_URL = "https://www.gismeteo.ru/city/gm/4079/"
+final String USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/56.0.2914.3 Safari/537.36"
+final def SUN_ACTIVITY_PAGE = Jsoup.connect(SUN_ACTIVITY_PAGE_URL).userAgent(USER_AGENT).get()
+final String SUN_ACTIVITY_CSS = "#geomagnetic table tr:nth-child(1) td b"
+
+final Integer SUN_ACTIVITY_MAX_VALUE = 8
+final Integer SUN_ACTIVITY_INTERVALS = 8
+final Double[] SUN_ACTIVITY_MEASUREMENTS = SUN_ACTIVITY_PAGE.select(SUN_ACTIVITY_CSS).collect { it.text() as Double }
+final Integer SUN_ACTIVITY_NUMBER = (SUN_ACTIVITY_MEASUREMENTS.sum() / SUN_ACTIVITY_INTERVALS).round()
+final Sun SUN_ACTIVITY = Sun.values()[SUN_ACTIVITY_NUMBER - 1]
+
+log.info "Sun activity: ${SUN_ACTIVITY_NUMBER} - ${SUN_ACTIVITY}: ${SUN_ACTIVITY.desc}"
+
+
+
+final String TEXT = "${PROGNOZ}; день ${T_DAY}, ночь ${T_NIGHT}; осадки ${OSADKI}мм (${CHANCE}%); ${SUN_ACTIVITY.desc} (${SUN_ACTIVITY_NUMBER}/${SUN_ACTIVITY_MAX_VALUE})"
+final String TEXT_TRL = com.ibm.icu.text.Transliterator.getInstance("Russian-Latin/BGN; NFD").transform(TEXT)
+        .replace("ʹ", "")
+        [0..160]
+final String TEXT_TRL_ENC = java.net.URLEncoder.encode(TEXT_TRL)
+
 log.info "Text: ${TEXT} | Length: ${TEXT.length()}"
-log.info "Text encoded: ${TEXT_ENC} | Length: ${TEXT_ENC.length()}"
+log.info "Text translited: ${TEXT_TRL} | Length: ${TEXT_TRL.length()}"
+log.info "Text translited and encoded: ${TEXT_TRL_ENC} | Length: ${TEXT_TRL_ENC.length()}"
+
+
+
+final String EXE = "http://sms.ru/sms/send?api_id=${options.a}&to=${options.p}&text=${TEXT_TRL_ENC}"
+final String EXE_OUT = EXE.toURL().text
+
+log.info "Request: ${EXE}"
 log.info "Response from server: ${EXE_OUT}"
